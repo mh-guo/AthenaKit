@@ -7,3 +7,6 @@ __pycache__/
 
 # OS
 .DS_Store
+
+# Sphinx docs build output
+docs/build/
