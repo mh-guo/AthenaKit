@@ -69,7 +69,7 @@ class AthenaData:
             self.hdf5_name = filename
             self.load_hdf5(filename,**kwargs)
         elif (filename.endswith('.pkl')):
-            self.hdf5_name = filename
+            self.pkl_name = filename
             self.load_pickle(filename,**kwargs)
         else:
             raise ValueError(f"Unsupported file type: {filename.split('.')[-1]}")
@@ -195,14 +195,14 @@ class AthenaData:
         warnings.warn(f'Warning: no parameter called {blockname}/{keyname}, return default value: {default}')
         return default
     
-    def _config_attrs_from_header(self):
+    def _config_attrs_from_header(self,include_ghost=False):
+        self.nghost = self.header( 'mesh', 'nghost', int)
         self.Nx1 = self.header( 'mesh', 'nx1', int)
         self.Nx2 = self.header( 'mesh', 'nx2', int)
         self.Nx3 = self.header( 'mesh', 'nx3', int)
         self.nx1 = self.header( 'meshblock', 'nx1', int)
         self.nx2 = self.header( 'meshblock', 'nx2', int)
         self.nx3 = self.header( 'meshblock', 'nx3', int)
-        self.nghost = self.header( 'mesh', 'nghost', int)
         self.x1min = self.header( 'mesh', 'x1min', float)
         self.x1max = self.header( 'mesh', 'x1max', float)
         self.x2min = self.header( 'mesh', 'x2min', float)
@@ -218,25 +218,47 @@ class AthenaData:
         # self.iso_cs=self.header('mhd','iso_sound_speed',float,0.0) if self.is_mhd else self.header('hydro','iso_sound_speed',float,0.0)
 
         return
-    
+
+    # squeeze the ghost cells into the physical mesh for diagnostics
+    def include_ghost(self):
+        # reset the mesh size to the original size
+        self.Nx1 = self.header( 'mesh', 'nx1', int)
+        self.Nx2 = self.header( 'mesh', 'nx2', int)
+        self.Nx3 = self.header( 'mesh', 'nx3', int)
+        self.nx1 = self.header( 'meshblock', 'nx1', int)
+        self.nx2 = self.header( 'meshblock', 'nx2', int)
+        self.nx3 = self.header( 'meshblock', 'nx3', int)
+        # squeeze the ghost cells into the physical mesh
+        self.Nx1 += 2*self.nghost*(self.Nx1//self.nx1)
+        self.Nx2 += 2*self.nghost*(self.Nx2//self.nx2)
+        self.Nx3 += 2*self.nghost*(self.Nx3//self.nx3)
+        self.nx1 += 2*self.nghost
+        self.nx2 += 2*self.nghost
+        self.nx3 += 2*self.nghost
+        return
+
     def config_coord(self):
         mb_geo, mb_list = self.mb_geometry, self.mb_list
-        nx1, nx2, nx3 = self.nx1, self.nx2, self.nx3
-        x=xp.swapaxes(xp.linspace(mb_geo[mb_list,0],mb_geo[mb_list,1],nx1+1),0,1)
-        y=xp.swapaxes(xp.linspace(mb_geo[mb_list,2],mb_geo[mb_list,3],nx2+1),0,1)
-        z=xp.swapaxes(xp.linspace(mb_geo[mb_list,4],mb_geo[mb_list,5],nx3+1),0,1)
+        nc1, nc2, nc3 = self.nx1, self.nx2, self.nx3
+        x=xp.swapaxes(xp.linspace(mb_geo[mb_list,0],mb_geo[mb_list,1],nc1+1),0,1)
+        y=xp.swapaxes(xp.linspace(mb_geo[mb_list,2],mb_geo[mb_list,3],nc2+1),0,1)
+        z=xp.swapaxes(xp.linspace(mb_geo[mb_list,4],mb_geo[mb_list,5],nc3+1),0,1)
         x,y,z=0.5*(x[:,:-1]+x[:,1:]),0.5*(y[:,:-1]+y[:,1:]),0.5*(z[:,:-1]+z[:,1:])
         ZYX=xp.swapaxes(xp.asarray([xp.meshgrid(z[i],y[i],x[i],indexing='ij') for i in range(len(mb_list))]),0,1)
         self.coord['x'],self.coord['y'],self.coord['z']=ZYX[2],ZYX[1],ZYX[0]
-        dx=xp.asarray([xp.full((nx3,nx2,nx1),(mb_geo[i,1]-mb_geo[i,0])/nx1) for i in mb_list])
-        dy=xp.asarray([xp.full((nx3,nx2,nx1),(mb_geo[i,3]-mb_geo[i,2])/nx2) for i in mb_list])
-        dz=xp.asarray([xp.full((nx3,nx2,nx1),(mb_geo[i,5]-mb_geo[i,4])/nx3) for i in mb_list])
+        dx=xp.asarray([xp.full((nc3,nc2,nc1),(mb_geo[i,1]-mb_geo[i,0])/nc1) for i in mb_list])
+        dy=xp.asarray([xp.full((nc3,nc2,nc1),(mb_geo[i,3]-mb_geo[i,2])/nc2) for i in mb_list])
+        dz=xp.asarray([xp.full((nc3,nc2,nc1),(mb_geo[i,5]-mb_geo[i,4])/nc3) for i in mb_list])
         self.coord['dx'],self.coord['dy'],self.coord['dz']=dx,dy,dz
         return
 
     ### data handling ###
     def add_data(self,name,data):
         self.data_raw[name]=data
+        return
+
+    def add_gr_data(self):
+        self.data_raw.update(grmhd.variables(self.data,self.spin))
         return
 
     def add_data_func(self,name,func):
@@ -247,11 +269,12 @@ class AthenaData:
     def _config_data(self):
         if (self.is_gr and self.add_gr):
             # print('Adding GR data')
-            self.data_raw.update(grmhd.variables(self.data,self.spin))
+            self.add_gr_data()
+        return
 
     def _config_data_func(self):
-        self.data_func['zeros'] = lambda d : xp.zeros(d('dens').shape)
-        self.data_func['ones'] = lambda d : xp.ones(d('dens').shape)
+        self.data_func['zeros'] = lambda d : xp.zeros(d(list(ad.data_raw.keys())[0]).shape)
+        self.data_func['ones'] = lambda d : xp.ones(d(list(ad.data_raw.keys())[0]).shape)
         self.data_func['vol'] = lambda d : d('dx')*d('dy')*d('dz')
         self.data_func['r'] = lambda d : xp.sqrt(d('x')**2+d('y')**2+d('z')**2)
         self.data_func['R'] = lambda d : xp.sqrt(d('x')**2+d('y')**2)
@@ -869,6 +892,51 @@ class AthenaData:
         if key not in self.slices.keys():
             self.slices[key] = {}
         self.slices[key].update(self.get_slice(varl,**kwargs))
+
+    # TODO(@mhguo): not compatible with MPI for now I think
+    def interpolate(self,varl='dens',points=[[0.,0.,0.]]):
+        from scipy.interpolate import RegularGridInterpolator
+        if (type(varl) is str):
+            varl = [varl]
+        varl = list(dict.fromkeys(varl)) # remove duplicates
+        raws = {var : asnumpy(self.data(var)) for var in varl}
+        points = np.array(points)
+        shape = points.shape
+        points = points.reshape(-1,3)
+        results = {var : np.full(points.shape[0], np.nan) for var in varl}
+        # result = np.full(points.shape[0], np.nan)
+        # for nraw,nmb in enumerate(self.mb_list):
+        for nraw,nmb in enumerate(self.mb_list):
+            print(f"Interpolating block {nmb}...")
+            x0, x1, y0, y1, z0, z1 = self.mb_geometry[nmb]
+            nx1, nx2, nx3 = self.nx1, self.nx2, self.nx3
+            x = np.linspace(x0, x1, nx1+1)
+            y = np.linspace(y0, y1, nx2+1)
+            z = np.linspace(z0, z1, nx3+1)
+            # Get cell centers
+            x = 0.5 * (x[:-1] + x[1:])
+            y = 0.5 * (y[:-1] + y[1:])
+            z = 0.5 * (z[:-1] + z[1:])
+            # Interpolate (trilinear)
+            # block_data = raw[self.mb_list.tolist().index(nmb)]
+            interps = {var : RegularGridInterpolator((z, y, x), raws[var][nraw], bounds_error=False, fill_value=None) for var in varl}
+            # interp = RegularGridInterpolator((z, y, x), block_data)
+            # Get block bounds
+            # find location of each point that is inside the block
+            locs = (points[:,0]>=x0) & (points[:,0]<=x1) &  (points[:,1]>=y0) & (points[:,1]<=y1) & (points[:,2]>=z0) & (points[:,2]<=z1)
+            # result[locs] = interp(points[locs,::-1])  # (z, y, x) order
+            for var in varl:
+                results[var][locs] = interps[var](points[locs,::-1])  # (z, y, x) order
+            # for i, pt in enumerate(points):
+            #     if locs[i]:
+            #         # Found the finest block containing the point
+            #         # Get block data and local grid
+            #         result[i] = interp(pt[::-1])  # (z, y, x) order
+            #         break  # Stop at the finest block
+        # reshape back to original shape
+        for var in varl:
+            results[var] = results[var].reshape(shape[:-1])
+        return results
     
     #def slice(self,var='dens',normal='z',north='y',center=[0.,0.,0.],width=1,height=1,zoom=0,level=0):
     #    return
@@ -919,7 +987,7 @@ class AthenaData:
         ax.streamplot(x*xyunit, y*xyunit, u, v, color=color,linewidth=linewidth,arrowsize=arrowsize)
         return fig
 
-    def plot_phase(self,var='dens,temp',key='vol',bins=128,weights='vol',where=None,title='',label='',xlabel=None,ylabel=None,xscale='log',yscale='log',\
+    def plot_phase(self,var='dens,temp',key='vol',bins=128,range=None,weights='vol',where=None,title='',label='',xlabel=None,ylabel=None,xscale='log',yscale='log',\
                    unit=1.0,cmap='viridis',norm='log',extent=None,density=False,save=False,savepath='',figdir='../figure/Simu_',\
                    figpath='',x=None,y=None,xshift=0.0,xunit=1.0,yshift=0.0,yunit=1.0,fig=None,ax=None,dpi=128,**kwargs):
         fig,ax = self._figax(fig,ax,dpi)
@@ -927,7 +995,7 @@ class AthenaData:
             dat = self.hists[key][var]
         except:
             varl = var.split(',') if ',' in var else var.split('-')
-            dat = self.get_hist2d([varl],bins=bins,scales=[[xscale,yscale]],weights=weights,where=where)[var]
+            dat = self.get_hist2d([varl],bins=bins,range=range,scales=[[xscale,yscale]],weights=weights,where=where)[var]
         x,y = dat['edges'].values()
         im_arr = asnumpy(dat['dat'])
         extent = [x.min(),x.max(),y.min(),y.max()] if extent is None else extent
@@ -1032,13 +1100,15 @@ class AthenaData:
             return fig,ax,im,quiver,strm
         return fig
 
-    def plot_profile(self,var='r,dens',unit=1.0,xunit=1.0,bins=256,weights='vol',fig=None,ax=None,dpi=200,xscale='log',yscale='log',xlabel='X',ylabel='Y',returnall=False,**kwargs):
+    def plot_profile(self,var='r,dens',unit=1.0,xunit=1.0,bins=256,weights='vol',range=None,where=None,fig=None,ax=None,dpi=200,xscale='log',yscale='log',xlabel=None,ylabel=None,returnall=False,**kwargs):
         fig,ax = self._figax(fig,ax,dpi)
         binv, v = var.split(',')
+        xlabel = binv if (xlabel is None) else xlabel
+        ylabel = v if (ylabel is None) else ylabel
         try:
             prof = self.profs[binv]
         except:
-            prof = self.get_profile(bin_var=binv,varl=[v],bins=bins,weights=weights,scales=[xscale,yscale])
+            prof = self.get_profile(bin_var=binv,varl=[v],bins=bins,weights=weights,scales=[xscale,yscale],range=range,where=where)
         line=ax.plot(prof[binv]*xunit,prof[v]*unit,**kwargs)
         if (returnall):
             return fig,ax,line

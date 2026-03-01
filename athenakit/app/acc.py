@@ -274,6 +274,7 @@ def add_data(ad,add_bcc=True):
     ad.add_data_func('Poyt_x', lambda d : d('btot^2')*d('velx')-d('bccx')*d('bdotv'))
     ad.add_data_func('Poyt_y', lambda d : d('btot^2')*d('vely')-d('bccy')*d('bdotv'))
     ad.add_data_func('Poyt_z', lambda d : d('btot^2')*d('velz')-d('bccz')*d('bdotv'))
+    ad.add_data_func('Poyt_r', lambda d : d('btot^2')*d('velr')-d('bccr')*d('bdotv'))
 
     #ad.add_data_func('Be_hyd', lambda d : (d('ekin')+d('pgas')/(d.ad.gamma-1.0))/d('dens')+d('potential'))
     #ad.add_data_func('Be_r', lambda d : (d('ekin')+d('pgas')/(d.ad.gamma-1.0)+d('Poyt_r')/d('vtot'))/d('dens')+d('potential'))
@@ -291,8 +292,8 @@ def add_data(ad,add_bcc=True):
 
     ad.add_data_func('inflow', lambda d : d('velr')<0.0)
     ad.add_data_func('outflow', lambda d : d('velr')>0.0)
-    for key,inte in zip(['mdot', 'momdot', 'eidot', 'ekdot', 'edot', 'eadot'],
-                        ['dens*velr', 'momr*velr', 'eint*velr', 'ekin*velr', 'etot*velr', 'eaflx']):
+    for key,inte in zip(['mdot', 'momdot', 'eidot', 'ekdot', 'emdot', 'edot', 'eadot'],
+                        ['dens*velr', 'momr*velr', 'eint*velr', 'ekin*velr', 'Poyt_r', 'etot*velr', 'eaflx']):
         for direc,dirvar in zip(['','in','out'],['ones','inflow','outflow']):
             var = key+direc
             ad.add_data_func(var, lambda d, inte=inte, dirvar=dirvar : 4.0*xp.pi*d('r')**2*d(inte)*d(dirvar))
