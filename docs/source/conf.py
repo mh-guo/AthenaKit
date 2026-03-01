@@ -15,6 +15,7 @@ extensions = [
     "sphinx.ext.intersphinx",
     "myst_parser",
     "sphinx_autodoc_typehints",
+    "sphinx_design",
 ]
 
 templates_path = ["_templates"]
@@ -32,6 +33,7 @@ html_theme_options = {
 myst_enable_extensions = [
     "colon_fence",
     "deflist",
+    "attrs_inline",
 ]
 
 autodoc_default_options = {
@@ -43,6 +45,10 @@ autodoc_default_options = {
 
 napoleon_google_docstring = True
 napoleon_numpy_docstring = True
+
+autodoc_mock_imports = ["pyxsim", "yt", "cupy"]
+
+suppress_warnings = ["ref.python", "ref.ref"]
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
