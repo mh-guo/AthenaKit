@@ -15,3 +15,5 @@ Current features are:
 ## Getting started
 
 Documentation is under construction on the [wiki](https://github.com/mh-guo/AthenaKit/wiki) pages.
+
+Full documentation is available at https://mh-guo.github.io/AthenaKit/
