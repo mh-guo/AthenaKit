@@ -213,6 +213,7 @@ class AthenaData:
         self.is_gr = self.header('coord','general_rel',bool,False)
         self.spin = self.header('coord','a',float,0.0)
         self.is_mhd = 'mhd' in self._header.keys()
+        self.is_rad = 'radiation' in self._header.keys()
         self.gamma=self.header('mhd','gamma',float,5/3) if self.is_mhd else self.header('hydro','gamma',float,5/3)
         # self.use_e=self.header('mhd','use_e',bool,True) if self.is_mhd else self.header('hydro','use_e',bool,True)
         # self.iso_cs=self.header('mhd','iso_sound_speed',float,0.0) if self.is_mhd else self.header('hydro','iso_sound_speed',float,0.0)
@@ -273,8 +274,8 @@ class AthenaData:
         return
 
     def _config_data_func(self):
-        self.data_func['zeros'] = lambda d : xp.zeros(d(list(ad.data_raw.keys())[0]).shape)
-        self.data_func['ones'] = lambda d : xp.ones(d(list(ad.data_raw.keys())[0]).shape)
+        self.data_func['zeros'] = lambda d : xp.zeros(d(list(d.ad.data_raw.keys())[0]).shape)
+        self.data_func['ones'] = lambda d : xp.ones(d(list(d.ad.data_raw.keys())[0]).shape)
         self.data_func['vol'] = lambda d : d('dx')*d('dy')*d('dz')
         self.data_func['r'] = lambda d : xp.sqrt(d('x')**2+d('y')**2+d('z')**2)
         self.data_func['R'] = lambda d : xp.sqrt(d('x')**2+d('y')**2)
@@ -343,6 +344,12 @@ class AthenaData:
         self.data_func['ptot'] = lambda d : d('pres')+d('pmag') if d.ad.is_mhd else d('pres')
         self.data_func['etot'] = lambda d : d('ekin')+d('eint')+d('emag') if d.ad.is_mhd\
                                                else d('ekin')+d('eint')
+        # radiaton
+        if (self.is_rad and 'r00' in self.data_raw.keys()):
+            # radial flux
+            self.data_func['rr'] = lambda d : (d('r01')*d('x')+d('r02')*d('y')+d('r03')*d('z'))/d('r')
+            # radial flux in fluid frame
+            self.data_func['rr_ff'] = lambda d : (d('r01_ff')*d('x')+d('r02_ff')*d('y')+d('r03_ff')*d('z'))/d('r')
         if (self.is_gr):
             self.data_func.update(grmhd.functions(self.spin))
         return
@@ -941,7 +948,7 @@ class AthenaData:
     #def slice(self,var='dens',normal='z',north='y',center=[0.,0.,0.],width=1,height=1,zoom=0,level=0):
     #    return
 
-    def _figax(self,fig=None,ax=None,dpi=200):
+    def _figax(self,fig=None,ax=None,dpi=135):
         if (ax is not None): fig = ax.get_figure()
         else: 
             fig = plt.figure(dpi=dpi) if fig is None else fig
@@ -951,7 +958,7 @@ class AthenaData:
     # plot is only for plot, accept the data array
     def plot_image(self,x,y,img,title='',label='',xlabel='X',ylabel='Y',xscale='linear',yscale='linear',\
                    cmap='viridis',norm='log',save=False,figfolder=None,figlabel='',figname='',\
-                   dpi=200,fig=None,ax=None,colorbar=True,returnall=False,aspect='auto',\
+                   dpi=135,fig=None,ax=None,colorbar=True,returnall=False,aspect='auto',\
                    xticks=None,yticks=None,xticklabels=None,yticklabels=None, **kwargs):
         fig,ax = self._figax(fig,ax,dpi)
         img = asnumpy(img[:,:])
@@ -980,16 +987,18 @@ class AthenaData:
             return fig,ax,im
         return im
 
-    def plot_stream(self,dpi=200,fig=None,ax=None,x=None,y=None,u=None,v=None,
+    def plot_stream(self,dpi=135,fig=None,ax=None,x=None,y=None,u=None,v=None,
                     xyunit=1.0,color='k',linewidth=None,arrowsize=None):
         ax = plt.axes() if ax is None else ax
         fig = ax.get_figure() if fig is None else fig
-        ax.streamplot(x*xyunit, y*xyunit, u, v, color=color,linewidth=linewidth,arrowsize=arrowsize)
-        return fig
+        strm = ax.streamplot(x*xyunit, y*xyunit, u, v, color=color,linewidth=linewidth,arrowsize=arrowsize)
+        if (returnall):
+            return fig,ax,strm
+        return strm
 
     def plot_phase(self,var='dens,temp',key='vol',bins=128,range=None,weights='vol',where=None,title='',label='',xlabel=None,ylabel=None,xscale='log',yscale='log',\
                    unit=1.0,cmap='viridis',norm='log',extent=None,density=False,save=False,savepath='',figdir='../figure/Simu_',\
-                   figpath='',x=None,y=None,xshift=0.0,xunit=1.0,yshift=0.0,yunit=1.0,fig=None,ax=None,dpi=128,**kwargs):
+                   figpath='',x=None,y=None,xshift=0.0,xunit=1.0,yshift=0.0,yunit=1.0,fig=None,ax=None,dpi=135,returnall=False,**kwargs):
         fig,ax = self._figax(fig,ax,dpi)
         try:
             dat = self.hists[key][var]
@@ -1018,13 +1027,15 @@ class AthenaData:
                 os.mkdir(figpath)
             fig.savefig(f"{figpath}fig_{var}_{self.num:04d}.png"\
                         if not savepath else savepath, bbox_inches='tight')
-        return fig
+        if (returnall):
+            return fig,ax,im
+        return ax
     
     # TODO(@mhguo): maybe remove later when the new version is stable
     def plot_slice_by_prof(self,var='dens',key=None,data=None,zoom=0,level=0,xyz=[],unit=1.0,bins=None,\
                    title='',label='',xlabel='X',ylabel='Y',cmap='viridis',\
                    norm='log',save=False,figdir='../figure/Simu_',figpath=None,\
-                   savepath='',savelabel='',figlabel='',dpi=200,vec=None,stream=None,circle=True,\
+                   savepath='',savelabel='',figlabel='',dpi=135,vec=None,stream=None,circle=True,\
                    fig=None,ax=None,xyunit=1.0,colorbar=True,returnall=False,stream_color='k',stream_linewidth=1.0,\
                    stream_arrowsize=1.0,vecx='velx',vecy='vely',vel_method='ave',aspect='equal',**kwargs):
         fig,ax = self._figax(fig,ax,dpi)
@@ -1054,8 +1065,8 @@ class AthenaData:
             cax = divider.append_axes("right", size="4%", pad=0.02)
             fig.colorbar(im,ax=ax,cax=cax, orientation='vertical',label=label)
         if (returnall):
-            return fig,im
-        return fig
+            return fig,ax,im
+        return ax
 
     # get snapshot data
     def get_slice_for_plot(self,var='dens',key=None,vec=None,stream=None,vecx='velx',vecy='vely',zoom=0,level=0,xyz=[],unit=1.0,xyunit=1.0,axis='z'):
@@ -1073,7 +1084,7 @@ class AthenaData:
 
     def plot_slice(self,var='dens',key=None,vec=None,stream=None,vecx='velx',vecy='vely',
                    zoom=0,level=0,xyz=[],unit=1.0,xyunit=1.0,axis='z',
-                   fig=None,ax=None,dpi=200,norm='log',cmap='viridis',aspect='equal',
+                   fig=None,ax=None,dpi=135,norm='log',cmap='viridis',aspect='equal',
                    xlabel=None,ylabel=None,title='',label='',colorbar=True,
                    quiver_para=dict(),stream_para={},
                    returnall=False,**kwargs):
@@ -1098,16 +1109,18 @@ class AthenaData:
             fig.colorbar(im,ax=ax,cax=cax, orientation='vertical',label=label)
         if (returnall):
             return fig,ax,im,quiver,strm
-        return fig
+        return ax
 
-    def plot_profile(self,var='r,dens',unit=1.0,xunit=1.0,bins=256,weights='vol',range=None,where=None,fig=None,ax=None,dpi=200,xscale='log',yscale='log',xlabel=None,ylabel=None,returnall=False,**kwargs):
+    def plot_profile(self,var='r,dens',key=None,unit=1.0,xunit=1.0,bins=256,weights='vol',range=None,where=None,fig=None,ax=None,dpi=135,xscale='log',yscale='log',xlabel=None,ylabel=None,returnall=False,**kwargs):
         fig,ax = self._figax(fig,ax,dpi)
         binv, v = var.split(',')
         xlabel = binv if (xlabel is None) else xlabel
         ylabel = v if (ylabel is None) else ylabel
-        try:
+        if (key is not None):
+            prof = self.profs[key]
+        elif (binv in self.profs.keys()):
             prof = self.profs[binv]
-        except:
+        else:
             prof = self.get_profile(bin_var=binv,varl=[v],bins=bins,weights=weights,scales=[xscale,yscale],range=range,where=where)
         line=ax.plot(prof[binv]*xunit,prof[v]*unit,**kwargs)
         if (returnall):
@@ -1116,7 +1129,7 @@ class AthenaData:
         ax.set_yscale(yscale)
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
-        return fig
+        return ax
 
     def plot(self,*args,**kwargs):
         return self.plot_profile(*args,**kwargs)
