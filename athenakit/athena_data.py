@@ -59,7 +59,7 @@ class AthenaData:
     def load(self,filename,config=True,add_gr=False,**kwargs):
         self.filename=filename
         self.add_gr=add_gr # temporary flag to add GR data
-        if (filename.endswith('.bin')):
+        if (filename.endswith('.bin') or filename.endswith('.cbin')):
             self.binary_name = filename
             self.load_binary(filename,**kwargs)
         elif (filename.endswith('.athdf')):
@@ -195,14 +195,16 @@ class AthenaData:
         warnings.warn(f'Warning: no parameter called {blockname}/{keyname}, return default value: {default}')
         return default
     
-    def _config_attrs_from_header(self,include_ghost=False):
-        self.nghost = self.header( 'mesh', 'nghost', int)
-        self.Nx1 = self.header( 'mesh', 'nx1', int)
-        self.Nx2 = self.header( 'mesh', 'nx2', int)
-        self.Nx3 = self.header( 'mesh', 'nx3', int)
-        self.nx1 = self.header( 'meshblock', 'nx1', int)
-        self.nx2 = self.header( 'meshblock', 'nx2', int)
-        self.nx3 = self.header( 'meshblock', 'nx3', int)
+    def _config_attrs_from_header(self):
+        if not hasattr(self, 'coarsen_factor'):
+            self.coarsen_factor = 1
+        self.nghost = self.header( 'mesh', 'nghost', int) // self.coarsen_factor
+        self.Nx1 = self.header( 'mesh', 'nx1', int) // self.coarsen_factor
+        self.Nx2 = self.header( 'mesh', 'nx2', int) // self.coarsen_factor
+        self.Nx3 = self.header( 'mesh', 'nx3', int) // self.coarsen_factor
+        self.nx1 = self.header( 'meshblock', 'nx1', int) // self.coarsen_factor
+        self.nx2 = self.header( 'meshblock', 'nx2', int) // self.coarsen_factor
+        self.nx3 = self.header( 'meshblock', 'nx3', int) // self.coarsen_factor
         self.x1min = self.header( 'mesh', 'x1min', float)
         self.x1max = self.header( 'mesh', 'x1max', float)
         self.x2min = self.header( 'mesh', 'x2min', float)
@@ -341,9 +343,14 @@ class AthenaData:
         self.data_func['emag'] = lambda d : 0.5*d('btot^2')
         self.data_func['beta'] = lambda d : d('pgas')/d('pmag')
         self.data_func['1/beta'] = lambda d : d('pmag')/d('pgas')
-        self.data_func['ptot'] = lambda d : d('pres')+d('pmag') if d.ad.is_mhd else d('pres')
-        self.data_func['etot'] = lambda d : d('ekin')+d('eint')+d('emag') if d.ad.is_mhd\
-                                               else d('ekin')+d('eint')
+        self.data_func['erad'] = lambda d : d('r00_ff')
+        self.data_func['prad'] = lambda d : d('r00_ff')/3.0
+        self.data_func['ptot'] = lambda d : d('pres')\
+                                            + (d('pmag') if d.ad.is_mhd else 0.0)\
+                                            + (d('prad') if d.ad.is_rad else 0.0)
+        self.data_func['etot'] = lambda d : d('ekin') + d('eint')\
+                                            + (d('emag') if d.ad.is_mhd else 0.0)\
+                                            + (d('erad') if d.ad.is_rad else 0.0)
         # radiaton
         if (self.is_rad and 'r00' in self.data_raw.keys()):
             # radial flux
