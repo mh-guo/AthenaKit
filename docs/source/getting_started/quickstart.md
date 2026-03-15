@@ -4,13 +4,16 @@ This guide shows the most common workflow: load a simulation snapshot, compute d
 
 ## Load a snapshot
 
-AthenaKit supports `.bin` (native AthenaK binary), `.athdf` (HDF5), and cached `.h5`/`.pkl` formats:
+AthenaKit supports `.bin` (native AthenaK binary), `.cbin` (coarsened binary), `.athdf` (HDF5), and cached `.h5`/`.pkl` formats:
 
 ```python
 import athenakit as ak
 
 # Load a .bin file
 ad = ak.load("my_simulation.out1.00042.bin")
+
+# Load a coarsened binary
+ad = ak.load("my_simulation.out1.00042.cbin")
 
 # Or load an athdf file
 ad = ak.load("my_simulation.out1.00042.athdf")
@@ -25,7 +28,7 @@ print(ad.data_list)
 # Key attributes from the header
 print(f"Time = {ad.time}")
 print(f"Grid: {ad.Nx1} x {ad.Nx2} x {ad.Nx3}")
-print(f"MHD: {ad.is_mhd},  GR: {ad.is_gr}")
+print(f"MHD: {ad.is_mhd},  GR: {ad.is_gr},  Radiation: {ad.is_rad}")
 ```
 
 ## Access data
@@ -43,6 +46,11 @@ beta = ad.data('beta')   # plasma β = pgas/pmag
 
 # Math expressions also work
 sound_speed = ad.data('(gamma*pres/dens)**0.5')
+
+# Radiation variables (when ad.is_rad is True)
+erad = ad.data('erad')    # radiation energy density (= r00_ff)
+prad = ad.data('prad')    # radiation pressure       (= erad/3)
+rr   = ad.data('rr')      # radial radiation flux
 ```
 
 ## Compute a radial profile
@@ -61,8 +69,10 @@ plt.show()
 ## Make a slice plot
 
 ```python
-# Project along z-axis (default)
-fig = ad.plot_slice('dens', zoom=0, level=0, axis='z', norm='log', cmap='viridis')
+import matplotlib.pyplot as plt
+
+# plot_slice returns an Axes object
+ax = ad.plot_slice('dens', zoom=0, level=0, axis='z', norm='log', cmap='viridis')
 plt.show()
 ```
 

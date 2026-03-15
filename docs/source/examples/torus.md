@@ -41,3 +41,8 @@ When `ad.is_gr` is `True`, additional derived variables are available:
 | `u_t` | Covariant time component (related to specific energy) |
 | `b^2` | Magnetic field invariant |
 | `sigma` | Magnetization σ = b²/ρ |
+| `Tt_t_mag` | Magnetic energy flux (t-t component of stress-energy) |
+| `Tt_r_mag` | Magnetic angular momentum flux (t-r component) |
+| `Tt_ph_mag` | Magnetic angular momentum flux (t-φ component) |
+| `Tr_t_mhd` | Total MHD energy flux |
+| `Tr_ph_mhd` | Total MHD angular momentum flux |
