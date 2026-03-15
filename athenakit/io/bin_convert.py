@@ -131,6 +131,8 @@ def read_binary(filename):
         pheader[key] = val
     time = float(pheader['time'])
     cycle = int(pheader['cycle'])
+    moments = int(pheader['number of moments']) if 'number of moments' in pheader else 0
+    coarsen_factor = int(pheader['coarsening factor']) if 'coarsening factor' in pheader else 1
     locsizebytes = int(pheader['size of location'])
     varsizebytes = int(pheader['size of variable'])
 
@@ -248,6 +250,8 @@ def read_binary(filename):
     filedata['time'] = time
     filedata['cycle'] = cycle
     filedata['var_names'] = var_list
+    filedata['moments'] = moments
+    filedata['coarsen_factor'] = coarsen_factor
 
     filedata['Nx1'] = Nx1
     filedata['Nx2'] = Nx2
