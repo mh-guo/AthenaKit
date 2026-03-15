@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "athenakit"
+version = "1.0.0"
+description = "Toolkit for analysis and visualization of AthenaK simulation data"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "Minghao Guo" }
+]
+dependencies = [
+    "numpy",
+    "h5py",
+    "matplotlib",
+    "scipy",
+    "packaging",
+]
+
+[project.optional-dependencies]
+gpu = ["cupy"]
+mpi = ["mpi4py"]
+all = ["cupy", "mpi4py"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["athenakit*"]
