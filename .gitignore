@@ -8,5 +8,10 @@ __pycache__/
 # OS
 .DS_Store
 
+# Package build artifacts
+*.egg-info/
+dist/
+build/
+
 # Sphinx docs build output
 docs/build/
