@@ -279,6 +279,7 @@ class AthenaData:
         self.data_func['zeros'] = lambda d : xp.zeros(d(list(d.ad.data_raw.keys())[0]).shape)
         self.data_func['ones'] = lambda d : xp.ones(d(list(d.ad.data_raw.keys())[0]).shape)
         self.data_func['vol'] = lambda d : d('dx')*d('dy')*d('dz')
+        self.data_func['rad'] = lambda d : xp.sqrt(d('x')**2+d('y')**2+d('z')**2)
         self.data_func['r'] = lambda d : xp.sqrt(d('x')**2+d('y')**2+d('z')**2)
         self.data_func['R'] = lambda d : xp.sqrt(d('x')**2+d('y')**2)
         self.data_func['theta'] = lambda d : xp.arccos(d('z')/d('r'))
