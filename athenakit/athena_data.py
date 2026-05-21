@@ -352,11 +352,11 @@ class AthenaData:
         self.data_func['etot'] = lambda d : d('ekin') + d('eint')\
                                             + (d('emag') if d.ad.is_mhd else 0.0)\
                                             + (d('erad') if d.ad.is_rad else 0.0)
-        # radiaton
+        # radiation
         if (self.is_rad and 'r00' in self.data_raw.keys()):
-            # radial flux
+            # "rr" is the Euclidean radial (x^i/r) R^{0i}, not Boyer r; for R^{0r} use d('R0r') in GR
+            # (see grmhd.variables / grmhd.functions when is_gr).
             self.data_func['rr'] = lambda d : (d('r01')*d('x')+d('r02')*d('y')+d('r03')*d('z'))/d('r')
-            # radial flux in fluid frame
             self.data_func['rr_ff'] = lambda d : (d('r01_ff')*d('x')+d('r02_ff')*d('y')+d('r03_ff')*d('z'))/d('r')
         if (self.is_gr):
             self.data_func.update(grmhd.functions(self.spin))
@@ -1038,7 +1038,44 @@ class AthenaData:
         if (returnall):
             return fig,ax,im
         return ax
-    
+
+    def plot_profile2d(self,binl='r,theta',var='dens',key=None,unit=1.0,xunit=1.0,yunit=1.0,
+                    bins=256,weights='vol',range=None,where=None,fig=None,ax=None,dpi=135,
+                    norm='log',cmap='viridis',label=None,xlabel=None,ylabel=None,title='',
+                    xscale='log',yscale='log',save=False,savepath='',figdir='../figure/Simu_',
+                    figpath='',returnall=False,**kwargs):
+        fig,ax = self._figax(fig,ax,dpi)
+        if (key is not None):
+            prof = self.profs[key]
+        elif (binl in self.profs.keys()):
+            prof = self.profs[binl]
+        else:
+            bin_varl = binl.split(',') if ',' in binl else binl.split('-')
+            prof = self.get_profile2d(bin_varl=bin_varl,varl=[var],bins=bins,weights=weights,scales=[xscale,yscale],range=range,where=where)
+        x,y = prof['edges'].values()
+        x = x*xunit
+        y = y*yunit
+        im_arr = asnumpy(prof[var])
+        im_arr = im_arr.T*unit
+        if (xlabel is None): xlabel = binl.split(',')[0]
+        if (ylabel is None): ylabel = binl.split(',')[1]
+        if (label is None): label = var
+        im = self.plot_image(x,y,im_arr,title=title,label=label,xlabel=xlabel,ylabel=ylabel,xscale=xscale,yscale=yscale,
+                             cmap=cmap,norm=norm,save=save,figfolder=figdir,figlabel=var,figname=savepath,fig=fig,ax=ax,**kwargs)
+        if (title != None): ax.set_title(f"Time = {self.time}" if not title else title)
+        if (save):
+            figpath=figdir+Path(self.path).parts[-1]+'/'+self.label+"/" if not figpath else figpath
+            if not os.path.isdir(figpath):
+                os.mkdir(figpath)
+            fig.savefig(f"{figpath}fig_{var}_{self.num:04d}.png"\
+                        if not savepath else savepath, bbox_inches='tight')
+        if (returnall):
+            return fig,ax,im
+        return ax
+
+    def plot2d(self,*args,**kwargs):
+        return self.plot_profile2d(*args,**kwargs)
+
     # TODO(@mhguo): maybe remove later when the new version is stable
     def plot_slice_by_prof(self,var='dens',key=None,data=None,zoom=0,level=0,xyz=[],unit=1.0,bins=None,\
                    title='',label='',xlabel='X',ylabel='Y',cmap='viridis',\
@@ -1119,7 +1156,9 @@ class AthenaData:
             return fig,ax,im,quiver,strm
         return ax
 
-    def plot_profile(self,var='r,dens',key=None,unit=1.0,xunit=1.0,bins=256,weights='vol',range=None,where=None,fig=None,ax=None,dpi=135,xscale='log',yscale='log',xlabel=None,ylabel=None,returnall=False,**kwargs):
+    def plot_profile(self,var='r,dens',key=None,unit=1.0,xunit=1.0,bins=256,weights='vol',
+                    range=None,where=None,fig=None,ax=None,dpi=135,xscale='log',yscale='log',
+                    xlabel=None,ylabel=None,returnall=False,**kwargs):
         fig,ax = self._figax(fig,ax,dpi)
         binv, v = var.split(',')
         xlabel = binv if (xlabel is None) else xlabel

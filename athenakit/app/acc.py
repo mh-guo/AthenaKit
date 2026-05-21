@@ -178,8 +178,11 @@ def add_tools(ad):
     xi_entry=ad.header('problem','xi_entry',float)
 
     ad.ic = InitialCondition(m_bh,m_star,r_star,m_dm,r_dm,rad_entry,k0_entry,xi_entry,1.0,dens_entry,gamma=gamma,unit=ad.unit)
-    ad.ic.solve(N1=2000,N2=1000,logh=0.004)
-    ad.rad_initial = ad.ic.rs
+    try:
+        ad.ic.solve(N1=2000,N2=1000,logh=0.004)
+        ad.rad_initial = ad.ic.rs
+    except Exception as e:
+        print(e)
     ad.accel = ad.ic.Acceleration
     return
 
