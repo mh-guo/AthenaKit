@@ -181,7 +181,7 @@ class AthenaData:
                 block = line.strip('<').strip('>')
                 self._header[block]={}
                 continue
-            key, value = line.split('=')
+            key, value = line.split('=', 1)
             self._header[block][key.strip()] = value
 
     def header(self, blockname, keyname, astype=str, default=None):
