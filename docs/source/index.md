@@ -1,42 +1,35 @@
 # AthenaKit Documentation
 
-**AthenaKit** is a Python toolkit for analyzing and visualizing simulation data from [AthenaK](https://github.com/IAS-Astrophysics/athenak) — a performance-portable astrophysics code built on Kokkos.
+**AthenaKit** is a Python toolkit for analyzing and visualizing simulation data from
+[AthenaK](https://github.com/IAS-Astrophysics/athenak).
 
-## Key Features
-
-- **Performance-portable** — runs on both CPU and CUDA GPU via CuPy
-- **MPI-aware** — distributes analysis across many ranks
-- **Rich data model** — lazy evaluation of 50+ derived variables from raw dumps
-- **Flexible I/O** — reads `.bin`, `.athdf`, `.h5`, and `.pkl` formats
-- **Built-in analysis** — histograms, profiles, slices, and interpolation
-- **Visualization** — slices, phase diagrams, and radial profiles via Matplotlib
-
-## Quick Navigation
+CPU/GPU portable, MPI-aware analysis with lazy derived variables, flexible I/O,
+and Matplotlib visualization.
 
 ::::{grid} 2
 :::{grid-item-card} Getting Started
 :link: getting_started/index
 :link-type: doc
 
-Install AthenaKit and run your first analysis in minutes.
+Install AthenaKit and run your first analysis.
 :::
 :::{grid-item-card} API Reference
 :link: api/index
 :link-type: doc
 
-Full documentation of all classes and functions.
+Classes and functions.
 :::
 :::{grid-item-card} Examples
 :link: examples/index
 :link-type: doc
 
-Worked examples for common astrophysical problems.
+Worked examples for common problems.
 :::
 :::{grid-item-card} Source on GitHub
 :link: https://github.com/mh-guo/AthenaKit
 :link-type: url
 
-Browse the source code, open issues, or contribute.
+Browse the code or open an issue.
 :::
 ::::
 

@@ -21,13 +21,19 @@ extensions = [
 templates_path = ["_templates"]
 exclude_patterns = []
 
-html_theme = "sphinx_rtd_theme"
+html_theme = "furo"
 html_static_path = ["_static"]
+html_css_files = ["custom.css"]
+html_title = "AthenaKit documentation"
 html_theme_options = {
-    "navigation_depth": 4,
-    "collapse_navigation": False,
-    "sticky_navigation": True,
-    "titles_only": False,
+    "light_css_variables": {
+        "color-brand-primary": "#3d5a73",
+        "color-brand-content": "#3d5a73",
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#8fb0c9",
+        "color-brand-content": "#8fb0c9",
+    },
 }
 
 myst_enable_extensions = [

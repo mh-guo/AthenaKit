@@ -1,0 +1,72 @@
+/* Hide Furo's right-hand "On this page" table of contents */
+.toc-drawer {
+  display: none !important;
+}
+
+/* Hide the toggles that open the right-hand TOC (header icon and mobile overlay) */
+.toc-header-icon,
+.toc-content-icon,
+.toc-overlay {
+  display: none !important;
+}
+
+/* Softer typography + muted blue-gray brand accent */
+body {
+  --font-stack: Georgia, Charter, "Palatino Linotype", "Book Antiqua", serif;
+  --font-stack--headings: Georgia, Charter, "Palatino Linotype", "Book Antiqua", serif;
+  --color-brand-primary: #3d5a73;
+  --color-brand-content: #3d5a73;
+}
+
+[data-theme="dark"] body,
+body[data-theme="dark"] {
+  --color-brand-primary: #8fb0c9;
+  --color-brand-content: #8fb0c9;
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not([data-theme="light"]) {
+    --color-brand-primary: #8fb0c9;
+    --color-brand-content: #8fb0c9;
+  }
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+}
+
+.content {
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* Keep code in monospace regardless of serif body font */
+code, pre, kbd, samp,
+.highlight,
+.sig,
+.pre {
+  font-family: var(--font-stack--monospace);
+}
+
+/* Tighter sidebar navigation */
+.sidebar-tree .caption,
+.sidebar-tree p.caption {
+  margin-top: 0.6rem;
+  margin-bottom: 0.1rem;
+}
+
+.sidebar-tree > .caption:first-child,
+.sidebar-tree > p.caption:first-child {
+  margin-top: 0;
+}
+
+.sidebar-tree li {
+  margin: 0;
+}
+
+.sidebar-tree .toctree-l1 > .reference,
+.sidebar-tree .toctree-l2 > .reference,
+.sidebar-tree .toctree-l3 > .reference {
+  padding-top: 0.15rem;
+  padding-bottom: 0.15rem;
+}

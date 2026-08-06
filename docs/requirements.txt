@@ -1,5 +1,5 @@
 sphinx>=7.0
-sphinx-rtd-theme>=2.0
+furo
 myst-parser>=3.0
 sphinx-autodoc-typehints>=2.0
 sphinx-design>=0.5
