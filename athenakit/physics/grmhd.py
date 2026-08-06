@@ -35,7 +35,7 @@ def cks_geometry(x, y, z, a):
     g_yy = 1.0 + f * ly ** 2
     g_yz = f * ly * lz
     g_zz = 1.0 + f * lz ** 2
-    return alpha, g_tt, g_tx, g_ty, g_tz, g_xx, g_xy, g_xz, g_yy, g_yz, g_zz
+    return r, alpha, g_tt, g_tx, g_ty, g_tz, g_xx, g_xy, g_xz, g_yy, g_yz, g_zz
 
 # Function for calculating normal-frame Lorentz factor
 def normal_lorentz(uux, uuy, uuz, g_xx, g_xy, g_xz, g_yy, g_yz, g_zz):
@@ -154,7 +154,7 @@ def variables(f, a):
     """
     v = {}
     x, y, z = f('x'), f('y'), f('z')
-    alpha, g_tt, g_tx, g_ty, g_tz, g_xx, g_xy, g_xz, g_yy, g_yz, g_zz = \
+    r, alpha, g_tt, g_tx, g_ty, g_tz, g_xx, g_xy, g_xz, g_yy, g_yz, g_zz = \
         cks_geometry(x, y, z, a)
 
     # Calculate relativistic velocity
@@ -229,6 +229,7 @@ def variables(f, a):
     # TODO(@mhguo): consider what to include as raw data
     # TODO(@mhguo): also consider the name of the variables
     # Add necessary variables to the dictionary
+    v['r'] = r
     v['alpha'] = alpha
     v['g_tt'] = g_tt
     v['g_tx'] = g_tx
@@ -272,7 +273,7 @@ def variables(f, a):
 
     return v
 
-#TODO: in principle, we can use the following function to calculate all the variables
+#TODO: in principle, we can use the following function to calculate all the variables on the fly
 def functions(a):
     # assuming we have x, y, z, dens, velx, vely, velz, eint, bcc1, bcc2, bcc3
     f = {}
@@ -287,9 +288,9 @@ def functions(a):
 
     # get geometry
     # TODO(@mhguo): the calculation is repeated, should be optimized
-    for i,k in enumerate(['alpha', 'g_tt', 'g_tx', 'g_ty', 'g_tz',\
+    for i,k in enumerate(['r', 'alpha', 'g_tt', 'g_tx', 'g_ty', 'g_tz',\
                           'g_xx', 'g_xy', 'g_xz', 'g_yy', 'g_yz', 'g_zz']):
-        f[k] = lambda d, a=a, i=i : cks_geometry(a, d('x'), d('y'), d('z'))[i]
+        f[k] = lambda d, a=a, i=i : cks_geometry(d('x'), d('y'), d('z'), a)[i]
     f['uux'] =  lambda d : d('velx')
     f['uuy'] =  lambda d : d('vely')
     f['uuz'] =  lambda d : d('velz')

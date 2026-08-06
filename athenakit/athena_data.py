@@ -181,7 +181,7 @@ class AthenaData:
                 block = line.strip('<').strip('>')
                 self._header[block]={}
                 continue
-            key, value = line.split('=')
+            key, value = line.split('=', 1)
             self._header[block][key.strip()] = value
 
     def header(self, blockname, keyname, astype=str, default=None):
@@ -212,6 +212,23 @@ class AthenaData:
         self.x3min = self.header( 'mesh', 'x3min', float)
         self.x3max = self.header( 'mesh', 'x3max', float)
 
+        self.nx1_out = self.binary.get("nx1_out_mb", self.nx1)
+        self.nx2_out = self.binary.get("nx2_out_mb", self.nx2)
+        self.nx3_out = self.binary.get("nx3_out_mb", self.nx3)
+        self.Nx1_out = 1 if (self.nx1_out == 1 and self.nx1 > 1) else self.Nx1*self.nx1_out//self.nx1
+        self.Nx2_out = 1 if (self.nx2_out == 1 and self.nx2 > 1) else self.Nx2*self.nx2_out//self.nx2
+        self.Nx3_out = 1 if (self.nx3_out == 1 and self.nx3 > 1) else self.Nx3*self.nx3_out//self.nx3
+        self.x1min_out, self.x1max_out = self.x1min, self.x1max
+        self.x2min_out, self.x2max_out = self.x2min, self.x2max
+        self.x3min_out, self.x3max_out = self.x3min, self.x3max
+        self.slice_axis = self._output_slice_axis()
+        self.is_slice = self.slice_axis is not None
+        if self.is_slice and 'mb_index' in self.binary.keys() and 'mb_geometry' in self.binary.keys():
+            mb_geometry_out = self._mb_output_geometry()
+            self.x1min_out, self.x1max_out = np.min(mb_geometry_out[:,0]), np.max(mb_geometry_out[:,1])
+            self.x2min_out, self.x2max_out = np.min(mb_geometry_out[:,2]), np.max(mb_geometry_out[:,3])
+            self.x3min_out, self.x3max_out = np.min(mb_geometry_out[:,4]), np.max(mb_geometry_out[:,5])
+
         self.is_gr = self.header('coord','general_rel',bool,False)
         self.spin = self.header('coord','a',float,0.0)
         self.is_mhd = 'mhd' in self._header.keys()
@@ -240,9 +257,29 @@ class AthenaData:
         self.nx3 += 2*self.nghost
         return
 
+    def _output_slice_axis(self):
+        axes = []
+        if (self.nx1_out == 1 and self.nx1 > 1): axes.append('x1')
+        if (self.nx2_out == 1 and self.nx2 > 1): axes.append('x2')
+        if (self.nx3_out == 1 and self.nx3 > 1): axes.append('x3')
+        return axes[0] if len(axes) == 1 else None
+
+    def _mb_output_geometry(self):
+        mb_geometry = np.array(self.mb_geometry, copy=True)
+        if (not self.is_slice or 'mb_index' not in self.binary.keys()):
+            return mb_geometry
+        axis = {'x1':0, 'x2':1, 'x3':2}[self.slice_axis]
+        nx_mb = [self.binary.get('nx1_mb', self.nx1),
+                 self.binary.get('nx2_mb', self.nx2),
+                 self.binary.get('nx3_mb', self.nx3)][axis]
+        dx = (mb_geometry[:,2*axis+1] - mb_geometry[:,2*axis]) / nx_mb
+        mb_geometry[:,2*axis] += self.binary['mb_index'][:,2*axis] * dx
+        mb_geometry[:,2*axis+1] = mb_geometry[:,2*axis] + dx
+        return mb_geometry
+
     def config_coord(self):
-        mb_geo, mb_list = self.mb_geometry, self.mb_list
-        nc1, nc2, nc3 = self.nx1, self.nx2, self.nx3
+        mb_geo, mb_list = self._mb_output_geometry(), self.mb_list
+        nc1, nc2, nc3 = self.nx1_out, self.nx2_out, self.nx3_out
         x=xp.swapaxes(xp.linspace(mb_geo[mb_list,0],mb_geo[mb_list,1],nc1+1),0,1)
         y=xp.swapaxes(xp.linspace(mb_geo[mb_list,2],mb_geo[mb_list,3],nc2+1),0,1)
         z=xp.swapaxes(xp.linspace(mb_geo[mb_list,4],mb_geo[mb_list,5],nc3+1),0,1)
@@ -279,6 +316,7 @@ class AthenaData:
         self.data_func['zeros'] = lambda d : xp.zeros(d(list(d.ad.data_raw.keys())[0]).shape)
         self.data_func['ones'] = lambda d : xp.ones(d(list(d.ad.data_raw.keys())[0]).shape)
         self.data_func['vol'] = lambda d : d('dx')*d('dy')*d('dz')
+        self.data_func['rad'] = lambda d : xp.sqrt(d('x')**2+d('y')**2+d('z')**2)
         self.data_func['r'] = lambda d : xp.sqrt(d('x')**2+d('y')**2+d('z')**2)
         self.data_func['R'] = lambda d : xp.sqrt(d('x')**2+d('y')**2)
         self.data_func['theta'] = lambda d : xp.arccos(d('z')/d('r'))
@@ -351,11 +389,11 @@ class AthenaData:
         self.data_func['etot'] = lambda d : d('ekin') + d('eint')\
                                             + (d('emag') if d.ad.is_mhd else 0.0)\
                                             + (d('erad') if d.ad.is_rad else 0.0)
-        # radiaton
+        # radiation
         if (self.is_rad and 'r00' in self.data_raw.keys()):
-            # radial flux
+            # "rr" is the Euclidean radial (x^i/r) R^{0i}, not Boyer r; for R^{0r} use d('R0r') in GR
+            # (see grmhd.variables / grmhd.functions when is_gr).
             self.data_func['rr'] = lambda d : (d('r01')*d('x')+d('r02')*d('y')+d('r03')*d('z'))/d('r')
-            # radial flux in fluid frame
             self.data_func['rr_ff'] = lambda d : (d('r01_ff')*d('x')+d('r02_ff')*d('y')+d('r03_ff')*d('z'))/d('r')
         if (self.is_gr):
             self.data_func.update(grmhd.functions(self.spin))
@@ -405,25 +443,25 @@ class AthenaData:
 
     @property
     def mb_dx(self):
-        mb_geo = self.mb_geometry
-        return np.asarray([(mb_geo[:,1]-mb_geo[:,0])/self.nx1,
-                           (mb_geo[:,3]-mb_geo[:,2])/self.nx2,
-                           (mb_geo[:,5]-mb_geo[:,4])/self.nx3]).T
+        mb_geo = self._mb_output_geometry()
+        return np.asarray([(mb_geo[:,1]-mb_geo[:,0])/self.nx1_out,
+                           (mb_geo[:,3]-mb_geo[:,2])/self.nx2_out,
+                           (mb_geo[:,5]-mb_geo[:,4])/self.nx3_out]).T
 
     ### get data in a single array ###
     def _cell_info(self,level=0,xyz=[]):
         if (not xyz):
-            xyz = [self.x1min,self.x1max,self.x2min,self.x2max,self.x3min,self.x3max]
+            xyz = [self.x1min_out,self.x1max_out,self.x2min_out,self.x2max_out,self.x3min_out,self.x3max_out]
         # level is physical level
-        nx1_fac = 2**level*self.Nx1/(self.x1max-self.x1min)
-        nx2_fac = 2**level*self.Nx2/(self.x2max-self.x2min)
-        nx3_fac = 2**level*self.Nx3/(self.x3max-self.x3min)
-        i_min = int((xyz[0]-self.x1min)*nx1_fac)
-        i_max = int(np.ceil((xyz[1]-self.x1min)*nx1_fac))
-        j_min = int((xyz[2]-self.x2min)*nx2_fac)
-        j_max = int(np.ceil((xyz[3]-self.x2min)*nx2_fac))
-        k_min = int((xyz[4]-self.x3min)*nx3_fac)
-        k_max = int(np.ceil((xyz[5]-self.x3min)*nx3_fac))
+        nx1_fac = 2**level*self.Nx1_out/(self.x1max_out-self.x1min_out)
+        nx2_fac = 2**level*self.Nx2_out/(self.x2max_out-self.x2min_out)
+        nx3_fac = 2**level*self.Nx3_out/(self.x3max_out-self.x3min_out)
+        i_min = int((xyz[0]-self.x1min_out)*nx1_fac)
+        i_max = int(np.ceil((xyz[1]-self.x1min_out)*nx1_fac))
+        j_min = int((xyz[2]-self.x2min_out)*nx2_fac)
+        j_max = int(np.ceil((xyz[3]-self.x2min_out)*nx2_fac))
+        k_min = int((xyz[4]-self.x3min_out)*nx3_fac)
+        k_max = int(np.ceil((xyz[5]-self.x3min_out)*nx3_fac))
         dx = (xyz[1]-xyz[0])/(i_max-i_min)
         dy = (xyz[3]-xyz[2])/(j_max-j_min)
         dz = (xyz[5]-xyz[4])/(k_max-k_min)
@@ -461,18 +499,18 @@ class AthenaData:
 
     def _data_raw_uniform(self,var,level=0,xyz=[],**kwargs):
         if (not xyz):
-            xyz = [self.x1min,self.x1max,self.x2min,self.x2max,self.x3min,self.x3max]
+            xyz = [self.x1min_out,self.x1max_out,self.x2min_out,self.x2max_out,self.x3min_out,self.x3max_out]
         # block_level is physical level of mesh refinement
         physical_level = level
-        nx1_fac = 2**level*self.Nx1/(self.x1max-self.x1min)
-        nx2_fac = 2**level*self.Nx2/(self.x2max-self.x2min)
-        nx3_fac = 2**level*self.Nx3/(self.x3max-self.x3min)
-        i_min = int((xyz[0]-self.x1min)*nx1_fac)
-        i_max = int(np.ceil((xyz[1]-self.x1min)*nx1_fac))
-        j_min = int((xyz[2]-self.x2min)*nx2_fac)
-        j_max = int(np.ceil((xyz[3]-self.x2min)*nx2_fac))
-        k_min = int((xyz[4]-self.x3min)*nx3_fac)
-        k_max = int(np.ceil((xyz[5]-self.x3min)*nx3_fac))
+        nx1_fac = 2**level*self.Nx1_out/(self.x1max_out-self.x1min_out)
+        nx2_fac = 2**level*self.Nx2_out/(self.x2max_out-self.x2min_out)
+        nx3_fac = 2**level*self.Nx3_out/(self.x3max_out-self.x3min_out)
+        i_min = int((xyz[0]-self.x1min_out)*nx1_fac)
+        i_max = int(np.ceil((xyz[1]-self.x1min_out)*nx1_fac))
+        j_min = int((xyz[2]-self.x2min_out)*nx2_fac)
+        j_max = int(np.ceil((xyz[3]-self.x2min_out)*nx2_fac))
+        k_min = int((xyz[4]-self.x3min_out)*nx3_fac)
+        k_max = int(np.ceil((xyz[5]-self.x3min_out)*nx3_fac))
         data = xp.zeros((k_max-k_min, j_max-j_min, i_max-i_min))
         raw = self.data(var)
         for nraw,nmb in enumerate(self.mb_list):
@@ -485,12 +523,12 @@ class AthenaData:
             if (block_level <= physical_level):
                 s = int(2**(physical_level - block_level))
                 # Calculate destination indices, without selection
-                il_d = block_loc[0] * self.nx1 * s if dimx else 0
-                jl_d = block_loc[1] * self.nx2 * s if dimy else 0
-                kl_d = block_loc[2] * self.nx3 * s if dimz else 0
-                iu_d = il_d + self.nx1 * s if dimx else 1
-                ju_d = jl_d + self.nx2 * s if dimy else 1
-                ku_d = kl_d + self.nx3 * s if dimz else 1
+                il_d = block_loc[0] * self.nx1_out * s if dimx else 0
+                jl_d = block_loc[1] * self.nx2_out * s if dimy else 0
+                kl_d = block_loc[2] * self.nx3_out * s if dimz else 0
+                iu_d = il_d + self.nx1_out * s if dimx else 1
+                ju_d = jl_d + self.nx2_out * s if dimy else 1
+                ku_d = kl_d + self.nx3_out * s if dimz else 1
                 # Calculate (prolongated) source indices, with selection
                 il_s = max(il_d, i_min) - il_d
                 jl_s = max(jl_d, j_min) - jl_d
@@ -511,11 +549,11 @@ class AthenaData:
                     # TODO(@mhguo): this seems to be the bottleneck of performance
                     # Only prolongate selected data
                     kl_r = kl_s // s
-                    ku_r = min(ku_s // s + 1, self.nx3)
+                    ku_r = min(ku_s // s + 1, self.nx3_out)
                     jl_r = jl_s // s
-                    ju_r = min(ju_s // s + 1, self.nx2)
+                    ju_r = min(ju_s // s + 1, self.nx2_out)
                     il_r = il_s // s
-                    iu_r = min(iu_s // s + 1, self.nx1)
+                    iu_r = min(iu_s // s + 1, self.nx1_out)
                     kl_s = kl_s - kl_r * s
                     ku_s = ku_s - kl_r * s
                     jl_s = jl_s - jl_r * s
@@ -535,12 +573,12 @@ class AthenaData:
                 # Calculate scale
                 s = int(2 ** (block_level - physical_level))
                 # Calculate destination indices, without selection
-                il_d = int(block_loc[0] * self.nx1 / s) if dimx else 0
-                jl_d = int(block_loc[1] * self.nx2 / s) if dimy else 0
-                kl_d = int(block_loc[2] * self.nx3 / s) if dimz else 0
-                iu_d = int(il_d + self.nx1 / s) if dimx else 1
-                ju_d = int(jl_d + self.nx2 / s) if dimy else 1
-                ku_d = int(kl_d + self.nx3 / s) if dimz else 1
+                il_d = int(block_loc[0] * self.nx1_out / s) if dimx else 0
+                jl_d = int(block_loc[1] * self.nx2_out / s) if dimy else 0
+                kl_d = int(block_loc[2] * self.nx3_out / s) if dimz else 0
+                iu_d = int(il_d + self.nx1_out / s) if dimx else 1
+                ju_d = int(jl_d + self.nx2_out / s) if dimy else 1
+                ku_d = int(kl_d + self.nx3_out / s) if dimz else 1
                 #print(kl_d,ku_d,jl_d,ju_d,il_d,iu_d)
                 # Calculate (restricted) source indices, with selection
                 il_s = max(il_d, i_min) - il_d
@@ -851,21 +889,21 @@ class AthenaData:
     def xyz(self,zoom=0,level=None,axis=None):
         level = zoom if (level is None) else level
         if (axis=='x'):
-            xyz = [self.x1min/2**level/self.Nx1,self.x1max/2**level/self.Nx1,
-                    self.x2min/2**zoom,self.x2max/2**zoom,
-                    self.x3min/2**zoom,self.x3max/2**zoom]
+            xyz = [self.x1min_out/2**level/self.Nx1_out,self.x1max_out/2**level/self.Nx1_out,
+                    self.x2min_out/2**zoom,self.x2max_out/2**zoom,
+                    self.x3min_out/2**zoom,self.x3max_out/2**zoom]
         elif (axis=='y'):
-            xyz = [self.x1min/2**zoom,self.x1max/2**zoom,
-                    self.x2min/2**level/self.Nx2,self.x2max/2**level/self.Nx2,
-                    self.x3min/2**zoom,self.x3max/2**zoom]
+            xyz = [self.x1min_out/2**zoom,self.x1max_out/2**zoom,
+                    self.x2min_out/2**level/self.Nx2_out,self.x2max_out/2**level/self.Nx2_out,
+                    self.x3min_out/2**zoom,self.x3max_out/2**zoom]
         elif (axis=='z'):
-            xyz = [self.x1min/2**zoom,self.x1max/2**zoom,
-                    self.x2min/2**zoom,self.x2max/2**zoom,
-                    self.x3min/2**level/self.Nx3,self.x3max/2**level/self.Nx3]
+            xyz = [self.x1min_out/2**zoom,self.x1max_out/2**zoom,
+                    self.x2min_out/2**zoom,self.x2max_out/2**zoom,
+                    self.x3min_out/2**level/self.Nx3_out,self.x3max_out/2**level/self.Nx3_out]
         else:
-            xyz = [self.x1min/2**zoom,self.x1max/2**zoom,
-                    self.x2min/2**zoom,self.x2max/2**zoom,
-                    self.x3min/2**zoom,self.x3max/2**zoom]
+            xyz = [self.x1min_out/2**zoom,self.x1max_out/2**zoom,
+                    self.x2min_out/2**zoom,self.x2max_out/2**zoom,
+                    self.x3min_out/2**zoom,self.x3max_out/2**zoom]
         return xyz
 
     def get_slice_faces(self,zoom=0,level=0,xyz=[],axis='z'):
@@ -920,10 +958,11 @@ class AthenaData:
         results = {var : np.full(points.shape[0], np.nan) for var in varl}
         # result = np.full(points.shape[0], np.nan)
         # for nraw,nmb in enumerate(self.mb_list):
+        mb_geometry = self._mb_output_geometry()
         for nraw,nmb in enumerate(self.mb_list):
             print(f"Interpolating block {nmb}...")
-            x0, x1, y0, y1, z0, z1 = self.mb_geometry[nmb]
-            nx1, nx2, nx3 = self.nx1, self.nx2, self.nx3
+            x0, x1, y0, y1, z0, z1 = mb_geometry[nmb]
+            nx1, nx2, nx3 = self.nx1_out, self.nx2_out, self.nx3_out
             x = np.linspace(x0, x1, nx1+1)
             y = np.linspace(y0, y1, nx2+1)
             z = np.linspace(z0, z1, nx3+1)
@@ -1037,7 +1076,44 @@ class AthenaData:
         if (returnall):
             return fig,ax,im
         return ax
-    
+
+    def plot_profile2d(self,binl='r,theta',var='dens',key=None,unit=1.0,xunit=1.0,yunit=1.0,
+                    bins=256,weights='vol',range=None,where=None,fig=None,ax=None,dpi=135,
+                    norm='log',cmap='viridis',label=None,xlabel=None,ylabel=None,title='',
+                    xscale='log',yscale='log',save=False,savepath='',figdir='../figure/Simu_',
+                    figpath='',returnall=False,**kwargs):
+        fig,ax = self._figax(fig,ax,dpi)
+        if (key is not None):
+            prof = self.profs[key]
+        elif (binl in self.profs.keys()):
+            prof = self.profs[binl]
+        else:
+            bin_varl = binl.split(',') if ',' in binl else binl.split('-')
+            prof = self.get_profile2d(bin_varl=bin_varl,varl=[var],bins=bins,weights=weights,scales=[xscale,yscale],range=range,where=where)
+        x,y = prof['edges'].values()
+        x = x*xunit
+        y = y*yunit
+        im_arr = asnumpy(prof[var])
+        im_arr = im_arr.T*unit
+        if (xlabel is None): xlabel = binl.split(',')[0]
+        if (ylabel is None): ylabel = binl.split(',')[1]
+        if (label is None): label = var
+        im = self.plot_image(x,y,im_arr,title=title,label=label,xlabel=xlabel,ylabel=ylabel,xscale=xscale,yscale=yscale,
+                             cmap=cmap,norm=norm,save=save,figfolder=figdir,figlabel=var,figname=savepath,fig=fig,ax=ax,**kwargs)
+        if (title != None): ax.set_title(f"Time = {self.time}" if not title else title)
+        if (save):
+            figpath=figdir+Path(self.path).parts[-1]+'/'+self.label+"/" if not figpath else figpath
+            if not os.path.isdir(figpath):
+                os.mkdir(figpath)
+            fig.savefig(f"{figpath}fig_{var}_{self.num:04d}.png"\
+                        if not savepath else savepath, bbox_inches='tight')
+        if (returnall):
+            return fig,ax,im
+        return ax
+
+    def plot2d(self,*args,**kwargs):
+        return self.plot_profile2d(*args,**kwargs)
+
     # TODO(@mhguo): maybe remove later when the new version is stable
     def plot_slice_by_prof(self,var='dens',key=None,data=None,zoom=0,level=0,xyz=[],unit=1.0,bins=None,\
                    title='',label='',xlabel='X',ylabel='Y',cmap='viridis',\
@@ -1118,7 +1194,9 @@ class AthenaData:
             return fig,ax,im,quiver,strm
         return ax
 
-    def plot_profile(self,var='r,dens',key=None,unit=1.0,xunit=1.0,bins=256,weights='vol',range=None,where=None,fig=None,ax=None,dpi=135,xscale='log',yscale='log',xlabel=None,ylabel=None,returnall=False,**kwargs):
+    def plot_profile(self,var='r,dens',key=None,unit=1.0,xunit=1.0,bins=256,weights='vol',
+                    range=None,where=None,fig=None,ax=None,dpi=135,xscale='log',yscale='log',
+                    xlabel=None,ylabel=None,returnall=False,**kwargs):
         fig,ax = self._figax(fig,ax,dpi)
         binv, v = var.split(',')
         xlabel = binv if (xlabel is None) else xlabel
