@@ -37,6 +37,31 @@ def cks_geometry(x, y, z, a):
     g_zz = 1.0 + f * lz ** 2
     return r, alpha, g_tt, g_tx, g_ty, g_tz, g_xx, g_xy, g_xz, g_yy, g_yz, g_zz
 
+def sks_geometry(x, y, z, a):
+    """Covariant SKS metric components."""
+    a2 = a ** 2
+    z2 = z ** 2
+    rr2 = x ** 2 + y ** 2 + z2
+    # Kerr-Schild radius
+    r2 = 0.5 * (rr2 - a2 + xp.sqrt((rr2 - a2) ** 2 + 4.0 * a2 * z2))
+    r = xp.sqrt(r2)
+    cth = z / r
+    sth2 = 1.0 - cth ** 2
+    sigma = r2 + a2 * cth ** 2
+    f = 2.0 * r / sigma
+    g_tt = -1.0 + f
+    g_tr = f
+    g_tth = 0.0
+    g_tph = -a * f * sth2
+    g_rr = 1.0 + f
+    g_rth = 0.0
+    g_rph = -a * (1.0 + f) * sth2
+    g_thth = sigma
+    g_thph = 0.0
+    g_phph = (r2 + a2 + a2 * f * sth2) * sth2
+    alpha = xp.sqrt(1.0 / (1.0 + f))
+    return r, alpha, g_tt, g_tr, g_tth, g_tph, g_rr, g_rth, g_rph, g_thth, g_thph, g_phph
+
 # Function for calculating normal-frame Lorentz factor
 def normal_lorentz(uux, uuy, uuz, g_xx, g_xy, g_xz, g_yy, g_yz, g_zz):
     uut = xp.sqrt(1.0 + g_xx * uux ** 2 + 2.0 * g_xy * uux * uuy
@@ -121,13 +146,32 @@ def three_to_four_field(bbx, bby, bbz, ut, ux, uy, uz, u_x, u_y, u_z):
 
 # Function for converting contravariant rank-2 tensor CKS components to SKS
 def cks_to_sks_tens_con(axx, axy, axz, ayx, ayy, ayz, azx, azy, azz, x, y, z, a):
-    axr, axth, axph = cks_to_sks_vec_con(axx, axy, axz, a, x, y, z)
-    ayr, ayth, ayph = cks_to_sks_vec_con(ayx, ayy, ayz, a, x, y, z)
-    azr, azth, azph = cks_to_sks_vec_con(azx, azy, azz, a, x, y, z)
-    arr, athr, aphr = cks_to_sks_vec_con(axr, ayr, azr, a, x, y, z)
-    arth, athth, aphth = cks_to_sks_vec_con(axth, ayth, azth, a, x, y, z)
-    arph, athph, aphph = cks_to_sks_vec_con(axph, ayph, azph, a, x, y, z)
+    axr, axth, axph = cks_to_sks_vec_con(axx, axy, axz, x, y, z, a)
+    ayr, ayth, ayph = cks_to_sks_vec_con(ayx, ayy, ayz, x, y, z, a)
+    azr, azth, azph = cks_to_sks_vec_con(azx, azy, azz, x, y, z, a)
+    arr, athr, aphr = cks_to_sks_vec_con(axr, ayr, azr, x, y, z, a)
+    arth, athth, aphth = cks_to_sks_vec_con(axth, ayth, azth, x, y, z, a)
+    arph, athph, aphph = cks_to_sks_vec_con(axph, ayph, azph, x, y, z, a)
     return arr, arth, arph, athr, athth, athph, aphr, aphth, aphph
+
+
+def cks_to_sks_tens_con_symm(
+    att, atx, aty, atz, axx, axy, axz, ayy, ayz, azz,
+    x, y, z, a,
+):
+    """Convert symmetric contravariant a^μν from CKS to SKS.
+
+    The time coordinate is unchanged, so only the time-spatial vector and spatial-spatial tensor
+    blocks transform. Return order is (att, atr, atth, atph, arr, arth, arph, athth, athph, aphph).
+    """
+    atr, atth, atph = cks_to_sks_vec_con(atx, aty, atz, x, y, z, a)
+    arr, arth, arph, _, athth, athph, _, _, aphph = cks_to_sks_tens_con(
+        axx, axy, axz,
+        axy, ayy, ayz,
+        axz, ayz, azz,
+        x, y, z, a,
+    )
+    return att, atr, atth, atph, arr, arth, arph, athth, athph, aphph
 
 # Function to calculate the horizon radius
 def r_horizon(a):
@@ -291,6 +335,9 @@ def functions(a):
     for i,k in enumerate(['r', 'alpha', 'g_tt', 'g_tx', 'g_ty', 'g_tz',\
                           'g_xx', 'g_xy', 'g_xz', 'g_yy', 'g_yz', 'g_zz']):
         f[k] = lambda d, a=a, i=i : cks_geometry(d('x'), d('y'), d('z'), a)[i]
+    for i,k in enumerate(['g_tr', 'g_tth', 'g_tph', 'g_rr', 'g_rth', 'g_rph',
+                          'g_thth', 'g_thph', 'g_phph'], start=3):
+        f[k] = lambda d, a=a, i=i : sks_geometry(d('x'), d('y'), d('z'), a)[i]
     f['uux'] =  lambda d : d('velx')
     f['uuy'] =  lambda d : d('vely')
     f['uuz'] =  lambda d : d('velz')
@@ -352,5 +399,25 @@ def functions(a):
     f['Tr_ph_mhd'] = lambda d : d('wmhd') * d('ur') * d('u_ph') - d('br') * d('b_ph')
     f['Tr_th_mhd'] = lambda d : d('wmhd') * d('ur') * d('u_th') - d('br') * d('b_th')
     f['Phi_flux'] = lambda d : 0.5 * xp.abs(d('Br_rel'))
+
+    # Radiation stress-energy tensor components in spherical KS coordinates.
+    f['Rtr'] = lambda d : cks_to_sks_tens_con_symm(
+        d('r00'), d('r01'), d('r02'), d('r03'),
+        d('r11'), d('r12'), d('r13'), d('r22'), d('r23'), d('r33'),
+        d('x'), d('y'), d('z'), a,
+    )[1]
+    f['Rrr'] = lambda d : cks_to_sks_tens_con_symm(
+        d('r00'), d('r01'), d('r02'), d('r03'),
+        d('r11'), d('r12'), d('r13'), d('r22'), d('r23'), d('r33'),
+        d('x'), d('y'), d('z'), a,
+    )[4]
+    f['Rrph'] = lambda d : cks_to_sks_tens_con_symm(
+        d('r00'), d('r01'), d('r02'), d('r03'),
+        d('r11'), d('r12'), d('r13'), d('r22'), d('r23'), d('r33'),
+        d('x'), d('y'), d('z'), a,
+    )[6]
+    f['Rr_t'] = lambda d : (d('g_tt') * d('Rtr')
+                            + d('g_tr') * d('Rrr')
+                            + d('g_tph') * d('Rrph'))
 
     return f
