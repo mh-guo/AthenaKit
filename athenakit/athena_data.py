@@ -994,12 +994,143 @@ class AthenaData:
     #def slice(self,var='dens',normal='z',north='y',center=[0.,0.,0.],width=1,height=1,zoom=0,level=0):
     #    return
 
+    def get_meshblocks(self, axis='z', coord=0.0, levels=None, xyz=None, tol=0.0):
+        """Return MeshBlocks intersecting a coordinate plane as 2D rectangles.
+
+        Parameters
+        ----------
+        axis : {'x','y','z'}
+            Normal of the slice plane.
+        coord : float
+            Plane location along ``axis`` (e.g. z=0).
+        levels : int or sequence, optional
+            Keep only these refinement levels (from ``mb_logical[:, -1]``).
+        xyz : sequence of 6 floats, optional
+            ROI ``[x0,x1,y0,y1,z0,z1]``; blocks must overlap this box in-plane.
+        tol : float
+            Tolerance when testing whether the plane cuts a block.
+
+        Returns
+        -------
+        dict with keys ``rects`` (n,4)=[u0,u1,v0,v1], ``levels``, ``ids``,
+        ``axes`` (in-plane axis names), ``axis``, ``coord``.
+        """
+        if not hasattr(self, 'mb_geometry') or self.mb_geometry is None:
+            raise RuntimeError('mb_geometry not available; load a .bin/.athdf dump first')
+        mb_geo = np.asarray(self._mb_output_geometry())
+        mb_logical = np.asarray(self.mb_logical)
+        axis = {'x1': 'x', 'x2': 'y', 'x3': 'z'}.get(axis.lower(), axis.lower())
+        # normal index + in-plane bound column pairs (lo,hi) in mb_geometry
+        if axis == 'x':
+            nrm, iu, iv, names = 0, (2, 3), (4, 5), ('y', 'z')
+        elif axis == 'y':
+            nrm, iu, iv, names = 1, (0, 1), (4, 5), ('x', 'z')
+        elif axis == 'z':
+            nrm, iu, iv, names = 2, (0, 1), (2, 3), ('x', 'y')
+        else:
+            raise ValueError(f"axis '{axis}' not supported")
+
+        lo = mb_geo[:, 2 * nrm]
+        hi = mb_geo[:, 2 * nrm + 1]
+        mask = (lo - tol <= coord) & (coord <= hi + tol)
+
+        if levels is not None:
+            levels = np.atleast_1d(levels)
+            mask &= np.isin(mb_logical[:, -1], levels)
+
+        if xyz is not None and len(xyz):
+            xyz = np.asarray(xyz, dtype=float)
+            # overlap tests on all three axes using the ROI box
+            for ia in range(3):
+                mask &= (mb_geo[:, 2 * ia] <= xyz[2 * ia + 1]) & (mb_geo[:, 2 * ia + 1] >= xyz[2 * ia])
+
+        ids = np.nonzero(mask)[0]
+        rects = np.column_stack([
+            mb_geo[ids, iu[0]], mb_geo[ids, iu[1]],
+            mb_geo[ids, iv[0]], mb_geo[ids, iv[1]],
+        ]) if ids.size else np.zeros((0, 4))
+        return {
+            'rects': rects,
+            'levels': mb_logical[ids, -1].astype(int) if ids.size else np.zeros(0, dtype=int),
+            'ids': ids,
+            'axes': names,
+            'axis': axis,
+            'coord': float(coord),
+        }
+
     def _figax(self,fig=None,ax=None,dpi=135):
         if (ax is not None): fig = ax.get_figure()
         else: 
             fig = plt.figure(dpi=dpi) if fig is None else fig
             ax = fig.axes[0] if len(fig.axes)>0 else plt.axes()
         return fig,ax
+
+    def plot_mesh(self, axis='z', coord=0.0, levels=None, xyz=None, zoom=None,
+                  fig=None, ax=None, dpi=135, xyunit=1.0, aspect='equal',
+                  color_by='level', cmap='tab10', color='k', linewidth=0.5,
+                  alpha=1.0, xlabel=None, ylabel=None, title='',
+                  returnall=False, **kwargs):
+        """Plot 2D MeshBlock outlines on a coordinate plane (overlay-friendly).
+
+        Typical use::
+
+            ax = ad.plot_slice('dens', axis='z')
+            ad.plot_mesh(ax=ax, axis='z', coord=0.0)
+
+            # mesh only
+            ad.plot_mesh(axis='z', zoom=2)
+        """
+        from matplotlib.collections import PatchCollection
+        from matplotlib.patches import Rectangle
+
+        if xyz is None and zoom is not None:
+            xyz = self.xyz(zoom=zoom)
+        mb = self.get_meshblocks(axis=axis, coord=coord, levels=levels, xyz=xyz)
+        own_ax = ax is None
+        fig, ax = self._figax(fig, ax, dpi)
+
+        rects, levs = mb['rects'], mb['levels']
+        patches = [
+            Rectangle((r[0] * xyunit, r[2] * xyunit),
+                      (r[1] - r[0]) * xyunit, (r[3] - r[2]) * xyunit)
+            for r in rects
+        ]
+
+        if color_by == 'level' and levs.size:
+            uniq = np.unique(levs)
+            cmap_obj = plt.get_cmap(cmap)
+            color_map = {lv: cmap_obj(i % cmap_obj.N) for i, lv in enumerate(uniq)}
+            edgecolors = [color_map[lv] for lv in levs]
+            pc = PatchCollection(patches, facecolor='none', edgecolor=edgecolors,
+                                 linewidths=linewidth, alpha=alpha, **kwargs)
+        else:
+            pc = PatchCollection(patches, facecolor='none', edgecolor=color,
+                                 linewidths=linewidth, alpha=alpha, **kwargs)
+        ax.add_collection(pc)
+
+        # only autoscale / label when we created the axes (overlay keeps caller view)
+        if own_ax and rects.size:
+            u0, u1 = rects[:, 0].min() * xyunit, rects[:, 1].max() * xyunit
+            v0, v1 = rects[:, 2].min() * xyunit, rects[:, 3].max() * xyunit
+            pad_u = 0.02 * (u1 - u0 + (u1 == u0))
+            pad_v = 0.02 * (v1 - v0 + (v1 == v0))
+            ax.set_xlim(u0 - pad_u, u1 + pad_u)
+            ax.set_ylim(v0 - pad_v, v1 + pad_v)
+            ax.set_aspect(aspect)
+            ax.set_xlabel(xlabel if xlabel is not None else mb['axes'][0].upper())
+            ax.set_ylabel(ylabel if ylabel is not None else mb['axes'][1].upper())
+        else:
+            if aspect is not None:
+                ax.set_aspect(aspect)
+            if xlabel is not None:
+                ax.set_xlabel(xlabel)
+            if ylabel is not None:
+                ax.set_ylabel(ylabel)
+        if title:
+            ax.set_title(title)
+        if returnall:
+            return fig, ax, pc, mb
+        return ax
 
     # plot is only for plot, accept the data array
     def plot_image(self,x,y,img,title='',label='',xlabel='X',ylabel='Y',xscale='linear',yscale='linear',\
