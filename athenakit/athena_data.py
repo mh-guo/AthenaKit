@@ -1395,7 +1395,10 @@ class AthenaDataSet:
         if (n is None):
             n = self.ns[0]
         return self.ads[n]
-    
+
+    def __setitem__(self, n, ad):
+        self.ads[n] = ad
+
     def keys(self):
         return self.ns
     
